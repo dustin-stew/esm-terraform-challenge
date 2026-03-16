@@ -1,0 +1,11 @@
+/solution*
+/tests/__pycache__
+CLAUDE.md
+.DS_Store
+
+*.tfstate
+*.tfstate.*
+**/.terraform/*
+**/.terraform.*
+
+.idea

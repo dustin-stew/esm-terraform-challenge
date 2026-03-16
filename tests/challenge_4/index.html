@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>NFL Scoreboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #013369; }
+    .card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; }
+    .score { font-size: 24px; font-weight: bold; }
+    .refresh { background: #013369; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <h1>🏈 NFL Scoreboard</h1>
+  <button class="refresh" onclick="loadData()">Refresh</button>
+
+  <h2>Live Scores</h2>
+  <div id="scores">Loading...</div>
+
+  <h2>Standings</h2>
+  <div id="standings">Loading...</div>
+
+  <script>
+    // Update this after terraform apply
+    const API_URL = 'http://localhost:4566/restapis/kvdqcfimvg/prod/_user_request_'; 
+
+    async function loadData() {
+      try {
+        // Load scores
+        const scoresRes = await fetch(`${API_URL}/scores`);
+        const scores = await scoresRes.json();
+        document.getElementById('scores').innerHTML = renderScores(scores);
+
+        // Load standings
+        const standingsRes = await fetch(`${API_URL}/standings`);
+        const standings = await standingsRes.json();
+        document.getElementById('standings').innerHTML = renderStandings(standings);
+      } catch (err) {
+        console.error(err);
+        document.getElementById('scores').innerHTML = 'Error loading data';
+      }
+    }
+
+    function renderScores(scores) {
+      if (!scores.length) return '<p>No games</p>';
+      return scores.map(g => `
+        <div class="card">
+          <span class="score">${g.homeTeam} ${g.homeScore} - ${g.awayScore} ${g.awayTeam}</span>
+          <br><small>${g.status}</small>
+        </div>
+      `).join('');
+    }
+
+    function renderStandings(standings) {
+      if (!standings.length) return '<p>No standings</p>';
+      return `<table>
+        <tr><th>Team</th><th>W</th><th>L</th></tr>
+        ${standings.map(t => `<tr><td>${t.teamId}</td><td>${t.wins}</td><td>${t.losses}</td></tr>`).join('')}
+      </table>`;
+    }
+
+    // Poll every 30 seconds
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>
