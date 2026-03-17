@@ -2,10 +2,10 @@
 # EventBridge Rule - Hourly Schedule
 # ------------------------------------------------------------------------------
 
-resource "aws_cloudwatch_event_rule" "hourly_pipeline" {
-  name                = "hourly-data-pipeline"
-  description         = "Triggers data processing pipeline every hour"
-  schedule_expression = "rate(1 hour)"
+resource "aws_cloudwatch_event_rule" "pipeline_schedule" {
+  name                = "pipeline-schedule"
+  description         = "Triggers data processing pipeline every 5 minutes"
+  schedule_expression = "rate(5 minutes)"
 }
 
 # ------------------------------------------------------------------------------
@@ -13,7 +13,7 @@ resource "aws_cloudwatch_event_rule" "hourly_pipeline" {
 # ------------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_target" "step_functions" {
-  rule      = aws_cloudwatch_event_rule.hourly_pipeline.name
+  rule      = aws_cloudwatch_event_rule.pipeline_schedule.name
   target_id = "data-pipeline"
   arn       = aws_sfn_state_machine.data_pipeline.arn
   role_arn  = aws_iam_role.eventbridge.arn

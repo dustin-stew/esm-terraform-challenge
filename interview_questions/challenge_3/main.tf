@@ -34,6 +34,7 @@ provider "aws" {
     events         = "http://localhost:4566"
     logs           = "http://localhost:4566"
     stepfunctions  = "http://localhost:4566"
+    sqs            = "http://localhost:4566"
   }
 
   default_tags {

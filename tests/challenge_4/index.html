@@ -11,10 +11,13 @@
     .refresh { background: #013369; color: white; padding: 10px 20px; border: none; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+    #status { font-size: 12px; color: #666; margin-left: 10px; }
+    #status.live { color: #28a745; }
+    #status.polling { color: #ffc107; }
   </style>
 </head>
 <body>
-  <h1>🏈 NFL Scoreboard</h1>
+  <h1>🏈 NFL Scoreboard <span id="status">Connecting...</span></h1>
   <button class="refresh" onclick="loadData()">Refresh</button>
 
   <h2>Live Scores</h2>
@@ -24,24 +27,105 @@
   <div id="standings">Loading...</div>
 
   <script>
-    // Update this after terraform apply
-    const API_URL = 'http://localhost:4566/restapis/kvdqcfimvg/prod/_user_request_'; 
+    // REST API for initial load and fallback (injected by Terraform)
+    const API_URL = '__API_URL__';
+
+    // WebSocket for real-time push (injected by Terraform)
+    const WS_URL = '__WS_URL__';
+
+    let ws = null;
+    let pollInterval = null;
+    let scoresCache = [];
+    let standingsCache = [];
+
+    // --- REST API (initial load + fallback) ---
 
     async function loadData() {
       try {
-        // Load scores
-        const scoresRes = await fetch(`${API_URL}/scores`);
-        const scores = await scoresRes.json();
-        document.getElementById('scores').innerHTML = renderScores(scores);
-
-        // Load standings
-        const standingsRes = await fetch(`${API_URL}/standings`);
-        const standings = await standingsRes.json();
-        document.getElementById('standings').innerHTML = renderStandings(standings);
+        const [scoresRes, standingsRes] = await Promise.all([
+          fetch(`${API_URL}/scores`),
+          fetch(`${API_URL}/standings`)
+        ]);
+        scoresCache = await scoresRes.json();
+        standingsCache = await standingsRes.json();
+        render();
       } catch (err) {
-        console.error(err);
+        console.error('REST fetch error:', err);
         document.getElementById('scores').innerHTML = 'Error loading data';
       }
+    }
+
+    // --- WebSocket (real-time push) ---
+
+    function connectWebSocket() {
+      if (!WS_URL) {
+        startPolling('No WebSocket URL configured');
+        return;
+      }
+
+      try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+          console.log('WebSocket connected');
+          setStatus('Live', 'live');
+          stopPolling();
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'update' && msg.data) {
+            msg.data.forEach(item => {
+              if ('gameId' in item) {
+                const idx = scoresCache.findIndex(s => s.gameId === item.gameId);
+                if (idx >= 0) scoresCache[idx] = { ...scoresCache[idx], ...item };
+                else scoresCache.push(item);
+              }
+              if ('teamId' in item) {
+                const idx = standingsCache.findIndex(s => s.teamId === item.teamId);
+                if (idx >= 0) standingsCache[idx] = { ...standingsCache[idx], ...item };
+                else standingsCache.push(item);
+              }
+            });
+            render();
+          }
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket closed, falling back to polling');
+          startPolling('Reconnecting...');
+          setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch (err) {
+        startPolling('WebSocket unavailable');
+      }
+    }
+
+    // --- Polling fallback ---
+
+    function startPolling(reason) {
+      setStatus(`Polling (${reason})`, 'polling');
+      if (!pollInterval) {
+        pollInterval = setInterval(loadData, 5000);
+      }
+    }
+
+    function stopPolling() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+
+    // --- Rendering ---
+
+    function render() {
+      document.getElementById('scores').innerHTML = renderScores(scoresCache);
+      document.getElementById('standings').innerHTML = renderStandings(standingsCache);
     }
 
     function renderScores(scores) {
@@ -56,15 +140,21 @@
 
     function renderStandings(standings) {
       if (!standings.length) return '<p>No standings</p>';
+      const sorted = [...standings].sort((a, b) => b.wins - a.wins || a.losses - b.losses);
       return `<table>
         <tr><th>Team</th><th>W</th><th>L</th></tr>
-        ${standings.map(t => `<tr><td>${t.teamId}</td><td>${t.wins}</td><td>${t.losses}</td></tr>`).join('')}
+        ${sorted.map(t => `<tr><td>${t.teamId}</td><td>${t.wins}</td><td>${t.losses}</td></tr>`).join('')}
       </table>`;
     }
 
-    // Poll every 30 seconds
-    loadData();
-    setInterval(loadData, 30000);
+    function setStatus(text, className) {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = className;
+    }
+
+    // --- Init ---
+    loadData().then(() => connectWebSocket());
   </script>
 </body>
 </html>

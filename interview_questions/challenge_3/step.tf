@@ -25,7 +25,7 @@ data "aws_iam_policy_document" "sfn_permissions" {
       "lambda:InvokeFunction"
     ]
     resources = [
-      aws_lambda_function.list_files.arn,
+      aws_lambda_function.drain_queue.arn,
       aws_lambda_function.process_file.arn,
       aws_lambda_function.notify.arn
     ]
@@ -62,14 +62,14 @@ resource "aws_sfn_state_machine" "data_pipeline" {
   role_arn = aws_iam_role.step_functions.arn
 
   definition = jsonencode({
-    Comment = "Sports data processing pipeline with parallel fan-out"
-    StartAt = "ListFiles"
+    Comment = "Sports data processing pipeline — drains SQS, fans out per file"
+    StartAt = "DrainQueue"
 
     States = {
-      ListFiles = {
+      DrainQueue = {
         Type     = "Task"
-        Resource = aws_lambda_function.list_files.arn
-        Next     = "CheckFilesExist"
+        Resource = aws_lambda_function.drain_queue.arn
+        Next     = "CheckMessagesExist"
         Catch = [{
           ErrorEquals = ["States.ALL"]
           Next        = "NotifyFailure"
@@ -77,10 +77,10 @@ resource "aws_sfn_state_machine" "data_pipeline" {
         }]
       }
 
-      CheckFilesExist = {
+      CheckMessagesExist = {
         Type = "Choice"
         Choices = [{
-          Variable      = "$.fileCount"
+          Variable      = "$.messageCount"
           NumericEquals = 0
           Next          = "NoFilesToProcess"
         }]
@@ -91,7 +91,7 @@ resource "aws_sfn_state_machine" "data_pipeline" {
         Type = "Pass"
         Result = {
           status  = "skipped"
-          message = "No files to process"
+          message = "No messages in queue"
         }
         End = true
       }
