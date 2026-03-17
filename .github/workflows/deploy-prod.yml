@@ -69,27 +69,7 @@ jobs:
         working-directory: interview_questions/challenge_${{ matrix.challenge }}
         run: terraform apply -auto-approve tfplan
 
-      - name: Smoke Test - Challenge 1
-        if: matrix.challenge == 1
-        run: |
-          aws --endpoint-url=http://localhost:4566 s3 ls s3://ncaa/ 2>&1
-          echo "Challenge 1: S3 bucket 'ncaa' exists"
-
-      - name: Smoke Test - Challenge 2
-        if: matrix.challenge == 2
-        run: |
-          aws --endpoint-url=http://localhost:4566 iam get-user --user-name ncaa-analyst
-          aws --endpoint-url=http://localhost:4566 iam get-role --role-name ncaa-data-writer
-          echo "Challenge 2: IAM user and role exist"
-
-      - name: Smoke Test - Challenge 3
-        if: matrix.challenge == 3
+      - name: Smoke Test
         run: |
           pip install boto3 pytest
-          pytest tests/test_challenge_3.py -v
-
-      - name: Smoke Test - Challenge 4
-        if: matrix.challenge == 4
-        run: |
-          pip install boto3 pytest
-          pytest tests/test_challenge_4.py -v
+          pytest tests/test_challenge_${{ matrix.challenge }}.py -v

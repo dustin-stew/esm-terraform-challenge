@@ -218,9 +218,11 @@ Two workflows run all challenges against LocalStack in CI. Same as local.
 
 After `terraform apply`, each challenge runs verification:
 
+All challenges use `pytest tests/test_challenge_$N.py -v`:
+
 | Challenge | Test |
 |-----------|------|
-| 1 | `aws s3 ls s3://ncaa/` — verifies bucket exists |
-| 2 | `aws iam get-user/get-role` — verifies `ncaa-analyst` user and `ncaa-data-writer` role exist |
+| 1 | `pytest tests/test_challenge_1.py` — verifies S3 bucket `ncaa` exists |
+| 2 | `pytest tests/test_challenge_2.py` — IAM user `ncaa-analyst`, role `ncaa-data-writer`, policy actions (read-only vs read-write), resource scoping to `ncaa` bucket, policy attachments, trust policy (EC2), bucket policy denies unencrypted uploads |
 | 3 | `pytest tests/test_challenge_3.py` — S3 bucket, SQS queue, Step Functions state machine, SNS topic, Lambda functions (`drain-queue`, `process-file`, `notify`), EventBridge rule; end-to-end: S3 upload → SQS message delivery → Step Functions execution |
 | 4 | `pytest tests/test_challenge_4.py` — S3 bucket with `index.html` (API URL injected), DynamoDB tables with streams enabled, Lambda functions (`get-scores`, `get-standings`), REST API; end-to-end: seeds data, hits `/scores` and `/standings` endpoints, validates response format |
