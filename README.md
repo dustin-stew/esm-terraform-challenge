@@ -1,3 +1,5 @@
+## ${\textsf{\color{green}My solution README can be found }}$[here](interview_questions/README.md).
+## 
 # Terraform Interview Challenge
 
 A hands-on Terraform coding challenge that runs entirely on your local machine using [LocalStack](https://localstack.cloud/) to emulate AWS services. No AWS account required.
