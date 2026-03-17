@@ -19,4 +19,8 @@ def aws_clients():
         "lambda": session.client("lambda", endpoint_url=LOCALSTACK_ENDPOINT),
         "iam": session.client("iam", endpoint_url=LOCALSTACK_ENDPOINT),
         "logs": session.client("logs", endpoint_url=LOCALSTACK_ENDPOINT),
+        "sqs": session.client("sqs", endpoint_url=LOCALSTACK_ENDPOINT),
+        "stepfunctions": session.client("stepfunctions", endpoint_url=LOCALSTACK_ENDPOINT),
+        "sns": session.client("sns", endpoint_url=LOCALSTACK_ENDPOINT),
+        "apigateway": session.client("apigateway", endpoint_url=LOCALSTACK_ENDPOINT),
     }

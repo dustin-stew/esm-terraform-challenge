@@ -97,24 +97,17 @@ jobs:
           aws --endpoint-url=http://localhost:4566 iam get-role --role-name ncaa-data-writer
           echo "Challenge 2: IAM user and role exist"
 
+      - name: Smoke Test - Challenge 3
+        if: matrix.challenge == 3
+        run: |
+          pip install boto3 pytest
+          pytest tests/test_challenge_3.py -v
+
       - name: Smoke Test - Challenge 4
         if: matrix.challenge == 4
         run: |
-          pip install boto3
-          python tests/challenge_4/seed_data.py
-
-          API_ID=$(aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis --query 'items[0].id' --output text)
-          echo "API Gateway ID: $API_ID"
-
-          echo "=== Testing /scores ==="
-          SCORES=$(curl -sf "http://localhost:4566/restapis/${API_ID}/prod/_user_request_/scores")
-          echo "$SCORES" | python -m json.tool
-          echo "$SCORES" | python -c "import sys,json; data=json.load(sys.stdin); assert len(data) > 0, 'No scores returned'; print(f'PASS: {len(data)} scores returned')"
-
-          echo "=== Testing /standings ==="
-          STANDINGS=$(curl -sf "http://localhost:4566/restapis/${API_ID}/prod/_user_request_/standings")
-          echo "$STANDINGS" | python -m json.tool
-          echo "$STANDINGS" | python -c "import sys,json; data=json.load(sys.stdin); assert len(data) > 0, 'No standings returned'; print(f'PASS: {len(data)} standings returned')"
+          pip install boto3 pytest
+          pytest tests/test_challenge_4.py -v
 
       - name: Comment Deploy Success
         uses: actions/github-script@v7

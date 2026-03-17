@@ -34,6 +34,17 @@ data "aws_iam_policy_document" "lambda_permissions" {
     ]
   }
 
+  # SQS access
+  statement {
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
+    ]
+    resources = [aws_sqs_queue.file_events.arn]
+  }
+
   # SNS publish
   statement {
     effect    = "Allow"
@@ -60,13 +71,13 @@ resource "aws_iam_role_policy" "lambda_permissions" {
 }
 
 # ------------------------------------------------------------------------------
-# Lambda: List Files
+# Lambda: Drain Queue
 # ------------------------------------------------------------------------------
 
-resource "aws_lambda_function" "list_files" {
-  function_name = "list-files"
+resource "aws_lambda_function" "drain_queue" {
+  function_name = "drain-queue"
   role          = aws_iam_role.lambda.arn
-  handler       = "handler.list_files"
+  handler       = "handler.drain_queue"
   runtime       = "python3.11"
   timeout       = 30
   memory_size   = 128
@@ -75,8 +86,7 @@ resource "aws_lambda_function" "list_files" {
 
   environment {
     variables = {
-      BUCKET_NAME   = aws_s3_bucket.data_pipeline.id
-      SOURCE_PREFIX = "raw/"
+      QUEUE_URL = aws_sqs_queue.file_events.id
     }
   }
 }
@@ -129,8 +139,8 @@ resource "aws_lambda_function" "notify" {
 # CloudWatch Log Groups
 # ------------------------------------------------------------------------------
 
-resource "aws_cloudwatch_log_group" "list_files" {
-  name              = "/aws/lambda/${aws_lambda_function.list_files.function_name}"
+resource "aws_cloudwatch_log_group" "drain_queue" {
+  name              = "/aws/lambda/${aws_lambda_function.drain_queue.function_name}"
   retention_in_days = 14
 }
 

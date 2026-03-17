@@ -6,8 +6,21 @@
 |-----------|-------|--------------|
 | 1 | S3 Basics | S3 |
 | 2 | IAM & Access Control | IAM, S3 Bucket Policy |
-| 3 | Scheduled Data Pipeline | EventBridge, Step Functions, Lambda, S3, SNS |
+| 3 | Event-Driven Data Pipeline | S3, SQS, EventBridge, Step Functions, Lambda, SNS |
 | 4 | NFL Scoreboard App | S3, API Gateway, Lambda, DynamoDB |
+
+---
+
+## Callouts
+
+| Practice | Where |
+|----------|-------|
+| `default_tags` in provider | All challenges — Environment, ManagedBy |
+| File organization | Separate files per service (s3.tf, iam.tf, lambda.tf) |
+| Least privilege IAM | Scoped to specific resources |
+| `data` blocks for policies | `aws_iam_policy_document` over inline JSON for challenge 3+4 |
+
+---
 
 ---
 
@@ -42,83 +55,42 @@ resource "aws_s3_bucket" "ncaa" {
 
 ---
 
-## Challenge 3: Scheduled Data Pipeline
+## Challenge 3: Event-Driven Data Pipeline
 
-**Objective:** Hourly job that processes files from S3 and notifies on completion/failure.
-
-### Architecture
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│   EventBridge (hourly)                                                  │
-│         │                                                               │
-│         ▼                                                               │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │  Step Functions                                                 │   │
-│   │                                                                 │   │
-│   │  ┌──────────────┐                                               │   │
-│   │  │  List Files  │  Lambda (lightweight)                         │   │
-│   │  └──────┬───────┘                                               │   │
-│   │         │                                                       │   │
-│   │         ▼                                                       │   │
-│   │  ┌──────────────────────────────────────────┐                   │   │
-│   │  │  Map State (parallel, per file)          │                   │   │
-│   │  │  ├── Process File (game_001.json)        │  Lambda/Fargate   │   │
-│   │  │  ├── Process File (game_002.json)        │  for data         │   │
-│   │  │                                          │  transformations  │   │
-│   │  │  • Retry 3x with backoff                 │                   │   │
-│   │  └──────────────────────────────────────────┘                   │   │
-│   │         │                                                       │   │
-│   │         ▼                                                       │   │
-│   │  ┌──────────────┐         ┌───────────────────┐                 │   │
-│   │  │   Notify     │────────►│  SNS (analysts)   │                 │   │
-│   │  │  (summary)   │         └───────────────────┘                 │   │
-│   │  └──────────────┘                                               │   │
-│   │                                                                 │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Scheduler | EventBridge | Native AWS, serverless, simple cron |
-| Orchestration | Step Functions | Fan-out parallelism, built-in retry, single notification after all complete |
-| Compute | Lambda (swappable to Fargate) | Lambda for < 15 min tasks; Fargate for longer/cheaper |
-| Notifications | SNS | Multi-channel, decoupled |
-| Error Handling | Retry + Catch | Automatic retry with backoff, route failures to notify |
-
-### Trade-offs
-
-- **Lambda vs Fargate:** Lambda is simpler but 15-min limit. Fargate is cheaper for sustained compute but more setup.
-- **Step Functions billing:** Standard workflows charge per transition, not duration — waiting is free.
-
----
-
-## Challenge 4: NFL Scoreboard App
-
-**Objective:** Static frontend displaying live scores and standings from a serverless API.
+**Objective:** Process files as they arrive in S3, buffer via SQS, batch-process on a schedule, and notify on completion.
 
 ### Architecture
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
+│   Files arrive (sporadic, burst, ...adaptable)                                          │
+│         │                                                                   │
+│         ▼                                                                   │
+│   ┌─────────┐      ┌─────────┐      ┌──────────────────────────────────┐    │
+│   │   S3    │─────►│   SQS   │─────►│  EventBridge (every 5 min)       │    │
+│   │         │      │ (buffer)│      │  "If queue has messages, start"  │    │
+│   └─────────┘      └─────────┘      └───────────────┬──────────────────┘    │
+│                                                     │                       │
+│                                                     ▼                       │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  Frontend                                                           │   │
-│   │  S3 Static Website                                                  │   │
-│   │  • index.html (polls API every 30s)                                 │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                              │                                              │
-│                              │ HTTP                                         │
-│                              ▼                                              │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  API Gateway (REST API)                                             │   │
+│   │  Step Functions                                                     │   │
 │   │                                                                     │   │
-│   │  GET /scores ─────► Lambda ─────► DynamoDB (nfl-scores)             │   │
-│   │                                                                     │   │
-│   │  GET /standings ──► Lambda ─────► DynamoDB (nfl-standings)          │   │
+│   │  ┌──────────────┐                                                   │   │
+│   │  │ Drain Queue  │  Lambda: pull all messages from SQS               │   │
+│   │  └──────┬───────┘                                                   │   │
+│   │         │                                                           │   │
+│   │         ▼                                                           │   │
+│   │  ┌──────────────────────────────────────┐                           │   │
+│   │  │  Map State (parallel, per file)      │                           │   │
+│   │  │  ├── Process game_001.json           │                           │   │
+│   │  │  ├── Process game_002.json           │                           │   │
+│   │  │  └── ... (up to 50 files)            │                           │   │
+│   │  └──────────────────────────────────────┘                           │   │
+│   │         │                                                           │   │
+│   │         ▼                                                           │   │
+│   │  ┌──────────────┐                                                   │   │
+│   │  │   Notify     │  Single SNS: "50 files processed, 48 success"     │   │
+│   │  └──────────────┘                                                   │   │
 │   │                                                                     │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
@@ -129,27 +101,135 @@ resource "aws_s3_bucket" "ncaa" {
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Frontend | S3 static website | Simple, cheap, scales infinitely |
-| API | REST API | LocalStack free tier compatible; HTTP API would be cheaper in prod |
-| Database | DynamoDB (PAY_PER_REQUEST) | Key-value lookups, auto-scaling, no capacity planning |
-| Compute | Separate Lambdas per endpoint | Single responsibility, independent scaling |
-| Real-time | Polling (30s) | Simple; maybe WebSocket API for true real-time |
+| Ingestion | S3 event → SQS | Decouples file arrival from processing; handles bursts |
+| Scheduler | EventBridge (every 5 min) | Polls queue on a schedule, only starts pipeline if messages exist |
+| Orchestration | Step Functions | Fan-out parallelism, built-in retry, single notification after all complete |
+| Compute | Lambda | Serverless, scales per-file in Map state |
+| Notifications | SNS | Multi-channel, decoupled, single summary after batch |
+| Error Handling | Retry + Catch | Automatic retry with backoff, route failures to notify |
 
 ### Trade-offs
 
-- **Polling vs WebSocket:** Polling is simpler but not truly real-time. For live game updates, WebSocket API with DynamoDB Streams would push instantly.
-- **REST vs HTTP API:** Had to use REST API with free version of LocalStack. Generally, REST API is more verbose but has caching, usage plans. HTTP API is cheaper/faster but fewer features. I would have used HTTP in this case.
-- **CloudFront:** Not included for simplicity. In prod, add for HTTPS + CDN caching.
+- **SQS buffering vs direct S3 trigger:** SQS absorbs bursts and allows batch processing on a schedule rather than per-file Lambda invocations. Avoids thundering herd on large uploads.
+- **Lambda vs Fargate:** Lambda is simpler but 15-min limit. Fargate is cheaper for sustained compute but more setup.
+- **Step Functions billing:** Standard workflows charge per transition, not duration — waiting is free.
 
 ---
 
-## Best Practices Demonstrated
+## Challenge 4: NFL Scoreboard App
 
-| Practice | Where |
-|----------|-------|
-| `default_tags` in provider | All challenges — Environment, ManagedBy |
-| File organization | Separate files per service (s3.tf, iam.tf, lambda.tf) |
-| Least privilege IAM | Scoped to specific resources |
-| `data` blocks for policies | `aws_iam_policy_document` over inline JSON for challenge 3+4 |
+**Objective:** Real-time scoreboard with serverless API and WebSocket push updates.
+
+### Architecture
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │  Frontend (S3 Static Website)                                       │   │
+│   │  • Initial load via REST API                                        │   │
+│   │  • Real-time updates via WebSocket (fallback to polling)            │   │
+│   └──────────────┬──────────────────────────────┬───────────────────────┘   │
+│                  │ HTTP (initial)                │ WebSocket (live)          │
+│                  ▼                               ▼                          │
+│   ┌──────────────────────────┐   ┌──────────────────────────────────┐      │
+│   │  REST API Gateway        │   │  WebSocket API Gateway            │      │
+│   │  GET /scores  ► Lambda   │   │  $connect    ► Lambda (connect)   │      │
+│   │  GET /standings ► Lambda │   │  $disconnect ► Lambda (disconnect)│      │
+│   └──────────┬───────────────┘   └──────────────────────────────────┘      │
+│              │                                   ▲                          │
+│              ▼                                   │ post_to_connection       │
+│   ┌──────────────────────────┐   ┌──────────────┴───────────────────┐      │
+│   │  DynamoDB                │   │  Lambda (ws_broadcast)            │      │
+│   │  nfl-scores              │──►│  Triggered by DynamoDB Streams    │      │
+│   │  nfl-standings           │──►│  Pushes changes to all clients    │      │
+│   │  (streams enabled)       │   └──────────────────────────────────┘      │
+│   │                          │                                              │
+│   │  nfl-ws-connections      │   Tracks active WebSocket connectionIds      │
+│   └──────────────────────────┘                                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Frontend | S3 static website | Simple, cheap, scales infinitely |
+| Initial load | REST API | Full data fetch on page load; LocalStack free tier compatible |
+| Real-time | WebSocket API + DynamoDB Streams | True push — no polling overhead, instant updates to all clients |
+| Fallback | Polling (5s) | Auto-fallback if WebSocket unavailable (e.g., free LocalStack) |
+| Database | DynamoDB (PAY_PER_REQUEST) + Streams | Key-value lookups, auto-scaling, streams trigger broadcast |
+| Connection tracking | DynamoDB (nfl-ws-connections) | Simple connectionId store, scanned on broadcast |
+
+### Trade-offs
+
+- **Hybrid REST + WebSocket:** REST API handles initial page load and serves as fallback. WebSocket pushes real-time changes. This is more complex but gives the best UX.
+- **WebSocket on LocalStack:** Free LocalStack doesn't support API Gateway v2 (WebSocket). The Terraform will plan successfully but apply requires LocalStack Pro or real AWS. Frontend falls back to polling automatically.
+- **REST vs HTTP API:** Had to use REST API with free version of LocalStack. HTTP API would be cheaper/faster in prod.
+- **CloudFront:** Not included for simplicity. In prod, add for HTTPS + CDN caching + WebSocket upgrade support.
+
+### Testing
+
+`tests/challenge_4/seed_data.py` seeds DynamoDB and runs a live game simulation:
+
+1. Seeds 3 games (Chiefs/Ravens final, Cowboys/Eagles in Q4, 49ers/Rams upcoming) and 5 team standings
+2. Counts down Q4 clock from 0:30 to 0:03 (1 update/second)
+3. Cowboys score a touchdown — score goes to 20-21
+4. Waits 8 seconds, then two-point conversion is good — final score 22-21
+5. Updates standings: Cowboys 10-3, Eagles 9-4
+
+```bash
+source .venv/bin/activate
+python tests/challenge_4/seed_data.py
+```
+
+With the frontend open in the browser, scores update in near real-time (5s polling or instant via WebSocket).
+
+Ad-hoc DynamoDB updates can also be made via CLI:
+```bash
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 \
+aws --endpoint-url=http://localhost:4566 dynamodb update-item \
+  --table-name nfl-scores \
+  --key '{"gameId":{"S":"game-002"}}' \
+  --update-expression "SET homeScore = :score, #s = :status" \
+  --expression-attribute-names '{"#s":"status"}' \
+  --expression-attribute-values '{":score":{"N":"28"},":status":{"S":"Final"}}'
+```
 
 ---
+
+## CI/CD — GitHub Actions
+
+Two workflows run all challenges against LocalStack in CI — no AWS credentials required.
+
+| Workflow | Trigger | Environment | Actions |
+|----------|---------|-------------|---------|
+| `deploy-dev.yml` | PR to `main` | dev | Plan → Comment on PR → Apply → Smoke Tests → Comment Success |
+| `deploy-prod.yml` | Push to `main` | prod | Plan (with `-out`) → Apply → Smoke Tests |
+
+### How It Works
+
+- **LocalStack** runs as a GitHub Actions service container (privileged, with Docker socket mounted for Lambda execution)
+- **Matrix strategy** runs all 4 challenges in parallel
+- **Environment** is parameterized via `terraform -var="environment=dev|prod"` (not hardcoded in `.tf` files)
+- **Lambda zip** is built in CI before terraform runs (challenges 3 & 4)
+
+### Smoke Tests
+
+After `terraform apply`, each challenge runs verification:
+
+| Challenge | Test |
+|-----------|------|
+| 1 | Verifies S3 bucket `ncaa` exists |
+| 2 | Verifies IAM user `ncaa-analyst` and role `ncaa-data-writer` exist |
+| 4 | Seeds DynamoDB, curls `/scores` and `/standings` endpoints, asserts non-empty JSON |
+
+### Running Locally
+
+```bash
+docker compose up -d
+cd interview_questions/challenge_N
+terraform init
+terraform apply -auto-approve -var="environment=dev"
+```
+

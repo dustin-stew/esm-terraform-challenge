@@ -46,3 +46,22 @@ resource "aws_s3_bucket_policy" "frontend" {
 
   depends_on = [aws_s3_bucket_public_access_block.frontend]
 }
+
+# ------------------------------------------------------------------------------
+# S3 Object - Frontend index.html (templated with API URLs)
+# ------------------------------------------------------------------------------
+
+resource "aws_s3_object" "index_html" {
+  bucket = aws_s3_bucket.frontend.id
+  key    = "index.html"
+  content = replace(
+    replace(
+      file("${path.module}/../../tests/challenge_4/index.html"),
+      "__API_URL__",
+      "http://localhost:4566/restapis/${aws_api_gateway_rest_api.scoreboard.id}/prod/_user_request_"
+    ),
+    "__WS_URL__",
+    ""
+  )
+  content_type = "text/html; charset=utf-8"
+}
