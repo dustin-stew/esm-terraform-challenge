@@ -32,9 +32,12 @@ jobs:
           - 4566:4566
         env:
           DEBUG: "0"
-          LAMBDA_EXECUTOR: local
-          LAMBDA_RUNTIME_EXECUTOR: local
+          LAMBDA_EXECUTOR: docker-reuse
+          DOCKER_HOST: unix:///var/run/docker.sock
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock
         options: >-
+          --privileged
           --health-cmd "curl -f http://localhost:4566/_localstack/health"
           --health-interval 5s
           --health-timeout 3s
