@@ -33,6 +33,7 @@ jobs:
         env:
           DEBUG: "0"
           LAMBDA_EXECUTOR: local
+          LAMBDA_RUNTIME_EXECUTOR: local
         options: >-
           --health-cmd "curl -f http://localhost:4566/_localstack/health"
           --health-interval 5s
