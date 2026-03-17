@@ -1,4 +1,4 @@
-## ${\textsf{\color{green}My solution README can be found }}$[here](interview_questions/README.md).
+## **${\textsf{\color{green}My solution README can be found }}$[here](interview_questions/README.md).**
 ## 
 # Terraform Interview Challenge
 
