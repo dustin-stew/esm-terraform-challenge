@@ -164,7 +164,7 @@ resource "aws_s3_bucket" "ncaa" {
 ### Trade-offs
 
 - **Hybrid REST + WebSocket:** REST API handles initial page load and serves as fallback. WebSocket pushes real-time changes. This is more complex but gives the best UX.
-- **WebSocket on LocalStack:** Free LocalStack doesn't support API Gateway v2 (WebSocket). The Terraform will plan successfully but apply requires LocalStack Pro or real AWS. Frontend falls back to polling automatically.
+- **WebSocket on LocalStack:** Free LocalStack doesn't support API Gateway v2 (WebSocket). The Terraform will plan successfully but apply requires LocalStack Base or real AWS. Frontend falls back to polling automatically.
 - **REST vs HTTP API:** Had to use REST API with free version of LocalStack. HTTP API would be cheaper/faster in prod.
 - **CloudFront:** Not included for simplicity. In prod, add for HTTPS + CDN caching + WebSocket upgrade support.
 
@@ -200,7 +200,7 @@ aws --endpoint-url=http://localhost:4566 dynamodb update-item \
 
 ## CI/CD — GitHub Actions
 
-Two workflows run all challenges against LocalStack in CI — no AWS credentials required.
+Two workflows run all challenges against LocalStack in CI. Same as local.
 
 | Workflow | Trigger | Environment | Actions |
 |----------|---------|-------------|---------|
@@ -220,16 +220,7 @@ After `terraform apply`, each challenge runs verification:
 
 | Challenge | Test |
 |-----------|------|
-| 1 | Verifies S3 bucket `ncaa` exists |
-| 2 | Verifies IAM user `ncaa-analyst` and role `ncaa-data-writer` exist |
-| 4 | Seeds DynamoDB, curls `/scores` and `/standings` endpoints, asserts non-empty JSON |
-
-### Running Locally
-
-```bash
-docker compose up -d
-cd interview_questions/challenge_N
-terraform init
-terraform apply -auto-approve -var="environment=dev"
-```
-
+| 1 | `aws s3 ls s3://ncaa/` — verifies bucket exists |
+| 2 | `aws iam get-user/get-role` — verifies `ncaa-analyst` user and `ncaa-data-writer` role exist |
+| 3 | `pytest tests/test_challenge_3.py` — S3 bucket, SQS queue, Step Functions state machine, SNS topic, Lambda functions (`drain-queue`, `process-file`, `notify`), EventBridge rule; end-to-end: S3 upload → SQS message delivery → Step Functions execution |
+| 4 | `pytest tests/test_challenge_4.py` — S3 bucket with `index.html` (API URL injected), DynamoDB tables with streams enabled, Lambda functions (`get-scores`, `get-standings`), REST API; end-to-end: seeds data, hits `/scores` and `/standings` endpoints, validates response format |
