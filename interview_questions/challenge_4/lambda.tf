@@ -63,7 +63,8 @@ resource "aws_lambda_function" "get_scores" {
   timeout       = 10
   memory_size   = 128
 
-  filename = "${path.module}/../app/handler.zip"
+  filename         = "${path.module}/../app/handler.zip"
+  source_code_hash = filebase64sha256("${path.module}/../app/handler.zip")
 
   environment {
     variables = {
@@ -84,7 +85,8 @@ resource "aws_lambda_function" "get_standings" {
   timeout       = 10
   memory_size   = 128
 
-  filename = "${path.module}/../app/handler.zip"
+  filename         = "${path.module}/../app/handler.zip"
+  source_code_hash = filebase64sha256("${path.module}/../app/handler.zip")
 
   environment {
     variables = {

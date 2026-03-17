@@ -10,11 +10,20 @@ def lambda_handler(event, context):
 
 import json
 import os
+from decimal import Decimal
 import boto3
 
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return int(obj) if obj % 1 == 0 else float(obj)
+        return super().default(obj)
+
+endpoint = os.environ.get('LOCALSTACK_HOSTNAME', 'localhost')
 dynamodb = boto3.resource(
     'dynamodb',
-    endpoint_url='http://localhost:4566',
+    endpoint_url=f'http://{endpoint}:4566',
     region_name='us-east-1',
     aws_access_key_id='test',
     aws_secret_access_key='test'
@@ -30,7 +39,7 @@ def get_scores(event, context):
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'
         },
-        'body': json.dumps(response.get('Items', []))
+        'body': json.dumps(response.get('Items', []), cls=DecimalEncoder)
     }
 
 def get_standings(event, context):
@@ -43,5 +52,5 @@ def get_standings(event, context):
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'
         },
-        'body': json.dumps(response.get('Items', []))
+        'body': json.dumps(response.get('Items', []), cls=DecimalEncoder)
     }
