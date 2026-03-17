@@ -68,3 +68,35 @@ jobs:
       - name: Terraform Apply
         working-directory: interview_questions/challenge_${{ matrix.challenge }}
         run: terraform apply -auto-approve tfplan
+
+      - name: Smoke Test - Challenge 1
+        if: matrix.challenge == 1
+        run: |
+          aws --endpoint-url=http://localhost:4566 s3 ls s3://ncaa/ 2>&1
+          echo "Challenge 1: S3 bucket 'ncaa' exists"
+
+      - name: Smoke Test - Challenge 2
+        if: matrix.challenge == 2
+        run: |
+          aws --endpoint-url=http://localhost:4566 iam get-user --user-name ncaa-analyst
+          aws --endpoint-url=http://localhost:4566 iam get-role --role-name ncaa-data-writer
+          echo "Challenge 2: IAM user and role exist"
+
+      - name: Smoke Test - Challenge 4
+        if: matrix.challenge == 4
+        run: |
+          pip install boto3
+          python tests/challenge_4/seed_data.py
+
+          API_ID=$(aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis --query 'items[0].id' --output text)
+          echo "API Gateway ID: $API_ID"
+
+          echo "=== Testing /scores ==="
+          SCORES=$(curl -sf "http://localhost:4566/restapis/${API_ID}/prod/_user_request_/scores")
+          echo "$SCORES" | python -m json.tool
+          echo "$SCORES" | python -c "import sys,json; data=json.load(sys.stdin); assert len(data) > 0, 'No scores returned'; print(f'PASS: {len(data)} scores returned')"
+
+          echo "=== Testing /standings ==="
+          STANDINGS=$(curl -sf "http://localhost:4566/restapis/${API_ID}/prod/_user_request_/standings")
+          echo "$STANDINGS" | python -m json.tool
+          echo "$STANDINGS" | python -c "import sys,json; data=json.load(sys.stdin); assert len(data) > 0, 'No standings returned'; print(f'PASS: {len(data)} standings returned')"
